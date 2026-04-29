@@ -3,8 +3,9 @@ import os
 import threading
 import socket
 import datetime
+import time
 from paramiko import ServerInterface
-from core.cli import load_command
+from core.cli import run_external_command
 
 
 class SSHShellHandler:
@@ -26,6 +27,10 @@ class SSHShellHandler:
     def get_prompt(self):
         """Get the shell prompt"""
         return f"{self.username}@{self.hostname}:{self.current_directory}$ "
+
+    def send_text(self, text):
+        """Send terminal text using CRLF line endings."""
+        self.channel.send(text.replace("\n", "\r\n").encode())
     
     def run_command(self, command):
         """Execute a command"""
@@ -36,66 +41,103 @@ class SSHShellHandler:
         cmd = parts[0]
         args = parts[1:]
         
-        # Built-in commands
-        if cmd == "cd":
-            if args:
-                self.current_directory = args[0]
-            else:
-                self.current_directory = "/home/guest"
-            return ""
-        
-        if cmd == "exit":
-            return None  # Signal to close
-        
-        if cmd == "pwd":
-            return self.current_directory
-        
-        # External commands
-        module = load_command(cmd)
-        if module:
-            try:
-                output = module.run(args, self.current_directory)
-                return output if output else ""
-            except Exception as e:
-                return f"Error: {str(e)}"
-        else:
+        try:
+            result = run_external_command(
+                cmd,
+                args,
+                self.current_directory,
+                {
+                    "username": self.username,
+                    "hostname": self.hostname,
+                    "home_directory": "/home/guest",
+                },
+            )
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+        if not result:
             return f"{cmd}: command not found"
+
+        self.current_directory = result["current_directory"]
+        if result["exit"]:
+            return None  # Signal to close
+
+        return result["output"]
     
     def handle_shell(self):
         """Handle interactive shell"""
         try:
             # Send banner
-            self.channel.send(b"Welcome to Ubuntu 20.04 LTS\n")
-            self.channel.send(b"login successful\n\n")
+            self.send_text("Welcome to Ubuntu 20.04 LTS\n")
+            self.send_text("login successful\n\n")
+            self.send_text(self.get_prompt())
+
+            buffer = ""
             
             while True:
-                # Send prompt
-                prompt = self.get_prompt()
-                self.channel.send(prompt.encode())
-                
-                # Receive command
+                # SSH clients send raw keystrokes for interactive shells. Echo
+                # printable input and process editing keys like a simple TTY.
                 try:
                     data = self.channel.recv(1024)
                     if not data:
                         break
                 except:
                     break
-                
-                command = data.decode('utf-8', errors='ignore').strip()
-                if not command:
-                    continue
-                
-                # Log
-                self.log_command(command)
-                
-                # Execute
-                result = self.run_command(command)
-                if result is None:
-                    self.channel.send(b"logout\n")
-                    break
-                
-                if result:
-                    self.channel.send((result + "\n").encode())
+
+                text = data.decode("utf-8", errors="ignore")
+                i = 0
+
+                while i < len(text):
+                    char = text[i]
+
+                    if char == "\x03":  # Ctrl-C
+                        buffer = ""
+                        self.send_text("^C\n")
+                        self.send_text(self.get_prompt())
+                    elif char == "\x04":  # Ctrl-D
+                        self.send_text("logout\n")
+                        return
+                    elif char in ("\r", "\n"):
+                        if char == "\r" and i + 1 < len(text) and text[i + 1] == "\n":
+                            i += 1
+
+                        self.send_text("\n")
+                        command = buffer.strip()
+                        buffer = ""
+
+                        if not command:
+                            self.send_text(self.get_prompt())
+                            i += 1
+                            continue
+
+                        self.log_command(command)
+
+                        result = self.run_command(command)
+                        if result is None:
+                            self.send_text("logout\n")
+                            return
+
+                        if result:
+                            self.send_text(result + "\n")
+
+                        self.send_text(self.get_prompt())
+                    elif char in ("\x7f", "\b"):  # Backspace/Delete
+                        if buffer:
+                            buffer = buffer[:-1]
+                            self.channel.send(b"\b \b")
+                    elif char == "\x1b":
+                        # Ignore escape sequences such as arrow keys.
+                        if i + 1 < len(text) and text[i + 1] == "[":
+                            i += 2
+                            while i < len(text) and not text[i].isalpha() and text[i] != "~":
+                                i += 1
+                        else:
+                            self.channel.send(b"^[[")
+                    elif char >= " " and char != "\x7f":
+                        buffer += char
+                        self.channel.send(char.encode())
+
+                    i += 1
         
         except Exception as e:
             print(f"[Shell Error] {e}")
@@ -134,6 +176,19 @@ class SSHServerInterface(ServerInterface):
         if kind == "session":
             return paramiko.OPEN_SUCCEEDED
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+
+    def check_channel_pty_request(
+        self,
+        channel,
+        term,
+        width,
+        height,
+        pixelwidth,
+        pixelheight,
+        modes,
+    ):
+        """Accept PTY requests from interactive SSH clients."""
+        return True
     
     def check_channel_shell_request(self, channel):
         """Accept shell channel requests"""
@@ -141,7 +196,38 @@ class SSHServerInterface(ServerInterface):
         handler = SSHShellHandler(channel, self.username or "guest")
         thread = threading.Thread(target=handler.handle_shell, daemon=False)
         thread.start()
-        return paramiko.OPEN_SUCCEEDED
+        return True
+
+    def check_channel_exec_request(self, channel, command):
+        """Accept one-shot commands like: ssh user@host ls."""
+        if isinstance(command, bytes):
+            command = command.decode("utf-8", errors="ignore")
+
+        handler = SSHShellHandler(channel, self.username or "guest")
+
+        def run_exec():
+            try:
+                handler.log_command(command)
+                result = handler.run_command(command)
+
+                if result is None:
+                    channel.send(b"logout\n")
+                elif result:
+                    channel.send((result + "\n").encode())
+
+                channel.send_exit_status(0)
+            except Exception as e:
+                print(f"[Exec Error] {e}")
+                try:
+                    channel.send_exit_status(1)
+                except Exception:
+                    pass
+            finally:
+                channel.close()
+
+        thread = threading.Thread(target=run_exec, daemon=False)
+        thread.start()
+        return True
 
 
 def start_ssh_server(host="0.0.0.0", port=2222, hostkey_path="core/ssh_host_key"):
@@ -185,9 +271,7 @@ def start_ssh_server(host="0.0.0.0", port=2222, hostkey_path="core/ssh_host_key"
                     # Start server - this will handle all channel requests
                     transport.start_server(server=server)
                     
-                    # Keep the transport alive by waiting on it
-                    # Don't call accept() - let paramiko handle channels automatically
-                    import time
+                    # Keep the transport alive while Paramiko handles channel requests.
                     while transport.is_active():
                         time.sleep(0.1)
                 
@@ -212,5 +296,3 @@ def start_ssh_server(host="0.0.0.0", port=2222, hostkey_path="core/ssh_host_key"
         print("\n[-] SSH Server shutdown")
     finally:
         sock.close()
-
-

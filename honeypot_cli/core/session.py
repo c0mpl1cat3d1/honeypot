@@ -3,7 +3,7 @@ import datetime
 import uuid
 import os
 from core.filesystem import FileSystem
-from core.cli import load_command
+from core.cli import run_external_command
 
 
 class Session:
@@ -61,27 +61,29 @@ class Session:
         cmd = parts[0]
         args = parts[1:]
 
-        # Built-in commands
-        if cmd == "cd":
-            if args:
-                self.current_directory = args[0]
-            else:
-                self.current_directory = "/home/guest"
-            return ""
+        try:
+            result = run_external_command(
+                cmd,
+                args,
+                self.current_directory,
+                {
+                    "username": self.username,
+                    "hostname": self.hostname,
+                    "home_directory": "/home/guest",
+                },
+            )
+        except Exception as e:
+            return f"Error executing command: {str(e)}\n"
 
-        if cmd == "exit":
+        if not result:
+            return f"{cmd}: command not found\n"
+
+        self.current_directory = result["current_directory"]
+        if result["exit"]:
             self.alive = False
             return "logout\n"
 
-        module = load_command(cmd)
-        if module:
-            try:
-                output = module.run(args, self.current_directory)
-                return (output + "\n") if output else ""
-            except Exception as e:
-                return f"Error executing command: {str(e)}\n"
-        else:
-            return f"{cmd}: command not found\n"
+        return (result["output"] + "\n") if result["output"] else ""
 
     # ===== MAIN SESSION LOOP =====
     def start(self):

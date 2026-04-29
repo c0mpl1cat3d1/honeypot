@@ -1,10 +1,12 @@
 import os
 import sys
 import importlib
+import importlib.util
 import datetime
+import inspect
 
 # ===== CONFIG =====
-COMMANDS_FOLDER = "commands"
+COMMANDS_PACKAGE = "commands"
 LOG_FILE = "logs/commands.log"
 
 # Add parent directory to path for imports
@@ -24,11 +26,55 @@ def log_command(command):
 
 # ===== LOAD COMMAND =====
 def load_command(cmd):
-    try:
-        module = importlib.import_module(f"{COMMANDS_FOLDER}.{cmd}")
-        return module
-    except ModuleNotFoundError:
+    if not cmd.isidentifier():
         return None
+
+    module_name = f"{COMMANDS_PACKAGE}.{cmd}"
+    if importlib.util.find_spec(module_name) is None:
+        return None
+
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as e:
+        if e.name == module_name:
+            return None
+        raise
+
+
+def run_command_module(module, args, current_directory, context=None):
+    """Run a command script, supporting optional session context."""
+    run_func = module.run
+    params = inspect.signature(run_func).parameters
+
+    if len(params) >= 3:
+        return run_func(args, current_directory, context or {})
+
+    return run_func(args, current_directory)
+
+
+def normalize_command_result(result, current_directory):
+    """Convert command script results into output/session state."""
+    if isinstance(result, dict):
+        return {
+            "output": result.get("output", "") or "",
+            "current_directory": result.get("current_directory", current_directory),
+            "exit": bool(result.get("exit", False)),
+        }
+
+    return {
+        "output": result or "",
+        "current_directory": current_directory,
+        "exit": False,
+    }
+
+
+def run_external_command(cmd, args, current_directory, context=None):
+    module = load_command(cmd)
+    if not module:
+        return None
+
+    result = run_command_module(module, args, current_directory, context)
+    return normalize_command_result(result, current_directory)
 
 
 # ===== EXECUTE COMMAND =====
@@ -42,27 +88,24 @@ def execute_command(command):
     cmd = parts[0]
     args = parts[1:]
 
-    # Built-in commands
-    if cmd == "cd":
-        if args:
-            current_directory = args[0]
-        else:
-            current_directory = "/home/user"
+    try:
+        result = run_external_command(
+            cmd,
+            args,
+            current_directory,
+            {"username": username, "home_directory": "/home/user"},
+        )
+    except Exception:
+        print("Error executing command")
         return
 
-    if cmd == "exit":
-        print("logout")
-        exit()
-
-    # External commands
-    module = load_command(cmd)
-    if module:
-        try:
-            output = module.run(args, current_directory)
-            if output:
-                print(output)
-        except Exception as e:
-            print("Error executing command")
+    if result:
+        current_directory = result["current_directory"]
+        if result["output"]:
+            print(result["output"])
+        if result["exit"]:
+            print("logout")
+            exit()
     else:
         print(f"{cmd}: command not found")
 
