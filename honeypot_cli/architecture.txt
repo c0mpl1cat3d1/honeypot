@@ -1,0 +1,15 @@
+honeypot_cli/
+│
+├── main.py                # entry point
+├── core/
+│   ├── cli.py             # CLI engine
+│   ├── session.py         # user + cwd
+│   └── filesystem.py      # fake FS
+│
+├── commands/              # 👈 THIS is your scripts folder
+│   ├── __init__.py
+│   ├── ls.py
+│   ├── cd.py
+│   ├── pwd.py
+│   ├── whoami.py
+│   └── exit.py
