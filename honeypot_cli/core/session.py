@@ -15,9 +15,9 @@ class Session:
         self.session_id = str(uuid.uuid4())[:8]
 
         # Session state
-        self.username = "guest"
-        self.hostname = "honeypot"
-        self.current_directory = "/home/guest"
+        self.username = "iiitr"
+        self.hostname = "raspberrypi"
+        self.current_directory = "/home/iiitr"
 
         # Logging
         self.log_file = f"logs/session_{self.session_id}.log"
@@ -69,7 +69,8 @@ class Session:
                 {
                     "username": self.username,
                     "hostname": self.hostname,
-                    "home_directory": "/home/guest",
+                    "home_directory": "/home/iiitr",
+                    "fs": self.fs,
                 },
             )
         except Exception as e:

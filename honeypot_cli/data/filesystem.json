@@ -1,0 +1,39 @@
+{
+  "/": {
+    "home": {
+      "iiitr": {
+        "notes.txt": "Meeting at 5PM\nDon't forget credentials\n",
+        "passwords.txt": "admin:admin123\nroot:toor\n",
+        "malware.com": "# Honeypot captured transfer attempt\n# Source: malware.com\n# Network access disabled; original remote content was not fetched.\n",
+        "malware": {
+          "README.md": "# Honeypot captured transfer attempt\n# Source: http://git//malware\n# Network access disabled; original remote content was not fetched.\n",
+          ".gitignore": "*.log\n"
+        },
+        "file.tar.gz": "# Honeypot captured transfer attempt\n# Source: http://example.com/file.tar.gz\n# Network access disabled; original remote content was not fetched.\n",
+        "a.bin": "# Honeypot captured transfer attempt\n# Source: user@1.2.3.4:/tmp/a.bin\n# Network access disabled; original remote content was not fetched.\n",
+        "repo": {
+          "README.md": "# Honeypot captured transfer attempt\n# Source: https://github.com/org/repo.git\n# Network access disabled; original remote content was not fetched.\n",
+          ".gitignore": "*.log\n"
+        },
+        "archive.tgz": "# Honeypot captured transfer attempt\n# Source: https://example.com/archive.tgz\n# Network access disabled; original remote content was not fetched.\n",
+        "honeypot": {
+          "README.md": "# Honeypot captured transfer attempt\n# Source: https://github.com/c0mpl1cat3d1/honeypot\n# Network access disabled; original remote content was not fetched.\n",
+          ".gitignore": "*.log\n"
+        }
+      },
+      "guest": {
+        "notes.txt": "Meeting at 5PM\nDon't forget credentials\n",
+        "passwords.txt": "admin:admin123\nroot:toor\n",
+        "malware.com": "# Honeypot captured transfer attempt\n# Source: malware.com\n# Network access disabled; original remote content was not fetched.\n"
+      }
+    },
+    "var": {
+      "log": {
+        "auth.log": "Failed login from 192.168.1.10\n"
+      }
+    },
+    "etc": {
+      "passwd": "root:x:0:0:root:/root:/bin/bash\n"
+    }
+  }
+}

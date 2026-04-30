@@ -14,8 +14,8 @@ class SSHShellHandler:
     def __init__(self, channel, username):
         self.channel = channel
         self.username = username
-        self.current_directory = "/home/guest"
-        self.hostname = "honeypot"
+        self.current_directory = "/home/iiitr"
+        self.hostname = "raspberrypi"
         self.log_file = f"logs/ssh_{os.getpid()}.log"
         os.makedirs("logs", exist_ok=True)
     
@@ -230,8 +230,12 @@ class SSHServerInterface(ServerInterface):
         return True
 
 
-def start_ssh_server(host="0.0.0.0", port=2222, hostkey_path="core/ssh_host_key"):
+def start_ssh_server(host="0.0.0.0", port=2222, hostkey_path=None):
     """Start SSH honeypot server"""
+
+    if hostkey_path is None:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        hostkey_path = os.path.join(project_root, "core", "ssh_host_key")
     
     # Ensure core directory exists
     os.makedirs(os.path.dirname(hostkey_path) if os.path.dirname(hostkey_path) else ".", exist_ok=True)
